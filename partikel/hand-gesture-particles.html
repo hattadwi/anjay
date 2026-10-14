@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SIGNAL // hand gesture particles</title>
+<style>
+  :root{
+    --void:#050912;
+    --void-2:#0a1220;
+    --panel:#0d1626cc;
+    --line:#1c2c44;
+    --cyan:#5ff2ff;
+    --magenta:#ff4fd8;
+    --amber:#ffb35f;
+    --text-dim:#7a8bab;
+    --text:#dce8ff;
+    --mono: 'JetBrains Mono', 'Courier New', monospace;
+  }
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap');
+
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{
+    width:100%; height:100%; overflow:hidden;
+    background:
+      radial-gradient(circle at 15% 10%, #0d1a30 0%, transparent 45%),
+      radial-gradient(circle at 85% 90%, #1a0d2a 0%, transparent 45%),
+      var(--void);
+    font-family: var(--mono);
+    color: var(--text);
+  }
+
+  #stage{ position:relative; width:100vw; height:100vh; }
+
+  canvas#particles{ position:absolute; inset:0; width:100%; height:100%; }
+
+  /* faint scanning grid */
+  #grid{
+    position:absolute; inset:0; pointer-events:none;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 42px 42px;
+    opacity:0.14;
+    mask-image: radial-gradient(circle at 50% 50%, black 10%, transparent 75%);
+  }
+
+  #scanline{
+    position:absolute; left:0; right:0; height:2px;
+    background:linear-gradient(90deg, transparent, var(--cyan), transparent);
+    opacity:0.5; filter: blur(0.5px);
+    animation: sweep 5s linear infinite;
+    pointer-events:none;
+  }
+  @keyframes sweep{
+    0%{ top:-2%; }
+    100%{ top:102%; }
+  }
+
+  /* HUD chrome */
+  header{
+    position:absolute; top:0; left:0; right:0;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding: 22px 28px;
+    pointer-events:none;
+    z-index:5;
+  }
+  .brand{
+    font-family:'Space Grotesk', var(--mono);
+    font-weight:700; font-size:15px; letter-spacing:0.28em;
+    color:var(--text);
+    display:flex; align-items:center; gap:10px;
+  }
+  .brand .dot{
+    width:8px; height:8px; border-radius:50%;
+    background: var(--magenta);
+    box-shadow:0 0 10px var(--magenta), 0 0 22px var(--magenta);
+    animation:pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse{ 0%,100%{opacity:1; transform:scale(1);} 50%{opacity:0.4; transform:scale(0.7);} }
+  .sub{ font-size:10px; letter-spacing:0.18em; color:var(--text-dim); margin-top:4px;}
+
+  #status-box{
+    text-align:right; font-size:10px; letter-spacing:0.14em; color:var(--text-dim);
+  }
+  #status-box .val{ color:var(--cyan); font-weight:700; }
+
+  /* webcam panel bottom-left */
+  #cam-panel{
+    position:absolute; left:24px; bottom:24px;
+    width:220px;
+    border:1px solid var(--line);
+    background:var(--panel);
+    backdrop-filter: blur(6px);
+    border-radius:4px;
+    overflow:hidden;
+    z-index:5;
+    box-shadow: 0 0 0 1px #000, 0 12px 30px -10px #000a;
+  }
+  #cam-panel .tag{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:6px 10px; font-size:9px; letter-spacing:0.14em; color:var(--text-dim);
+    border-bottom:1px solid var(--line);
+  }
+  #cam-panel .tag .rec{ color:var(--magenta); display:flex; align-items:center; gap:5px;}
+  #cam-panel .tag .rec::before{
+    content:''; width:6px; height:6px; border-radius:50%; background:var(--magenta);
+    animation:pulse 1.2s infinite;
+  }
+  .cam-wrap{ position:relative; width:100%; aspect-ratio: 4/3; background:#000; }
+  video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); opacity:0.85; }
+  #cam-canvas{ position:absolute; inset:0; width:100%; height:100%; transform:scaleX(-1); }
+
+  /* gesture legend right */
+  #legend{
+    position:absolute; right:24px; bottom:24px;
+    width:190px;
+    border:1px solid var(--line);
+    background:var(--panel);
+    backdrop-filter: blur(6px);
+    border-radius:4px;
+    padding:12px 14px;
+    font-size:10px; letter-spacing:0.05em; color:var(--text-dim);
+    z-index:5;
+  }
+  #legend h3{
+    font-size:9px; letter-spacing:0.16em; color:var(--text-dim); margin-bottom:8px; font-weight:500;
+  }
+  .leg-row{ display:flex; align-items:center; gap:8px; padding:4px 0; }
+  .leg-row .sw{ width:10px; height:10px; border-radius:2px; flex-shrink:0; }
+  .leg-row.active{ color:var(--text); }
+  .leg-row.active .sw{ box-shadow:0 0 8px currentColor; }
+
+  #center-caption{
+    position:absolute; left:50%; bottom:56px; transform:translateX(-50%);
+    font-family:'Space Grotesk', var(--mono);
+    font-size:11px; letter-spacing:0.3em; color:var(--text-dim);
+    z-index:5; text-align:center; pointer-events:none;
+    text-transform:uppercase;
+  }
+  #center-caption .name{ color:var(--cyan); font-weight:700; font-size:12px; }
+
+  #loading{
+    position:absolute; inset:0; z-index:20;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:var(--void); gap:14px;
+    font-size:11px; letter-spacing:0.2em; color:var(--text-dim);
+  }
+  #loading .ring{
+    width:34px; height:34px; border-radius:50%;
+    border:2px solid var(--line); border-top-color:var(--cyan);
+    animation:spin 0.9s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg);} }
+  #loading.hidden{ display:none; }
+  #err{
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    z-index:30; max-width:340px; text-align:center; font-size:11px;
+    color:var(--amber); letter-spacing:0.05em; line-height:1.6; display:none;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="particles"></canvas>
+  <div id="grid"></div>
+  <div id="scanline"></div>
+
+  <header>
+    <div>
+      <div class="brand"><span class="dot"></span>SIGNAL</div>
+      <div class="sub">GESTURE&nbsp;→&nbsp;FORM&nbsp;DECODER</div>
+    </div>
+    <div id="status-box">
+      TRACKING&nbsp;&nbsp;<span class="val" id="track-state">INIT…</span><br>
+      HAND&nbsp;&nbsp;<span class="val" id="hand-state">—</span>
+    </div>
+  </header>
+
+  <div id="cam-panel">
+    <div class="tag"><span>FEED_01</span><span class="rec">LIVE</span></div>
+    <div class="cam-wrap">
+      <video id="video" playsinline></video>
+      <canvas id="cam-canvas"></canvas>
+    </div>
+  </div>
+
+  <div id="legend">
+    <h3>KNOWN SIGNS</h3>
+    <div class="leg-row" data-g="open"><div class="sw" style="background:#5ff2ff"></div>TELAPAK TERBUKA → HATI</div>
+    <div class="leg-row" data-g="peace"><div class="sw" style="background:#ff4fd8"></div>DAMAI (✌) → BINTANG</div>
+    <div class="leg-row" data-g="fist"><div class="sw" style="background:#ffb35f"></div>KEPALAN → LINGKARAN</div>
+    <div class="leg-row" data-g="thumb"><div class="sw" style="background:#8dff9e"></div>JEMPOL → TEKS</div>
+  </div>
+
+  <div id="center-caption">TERDETEKSI &nbsp;<span class="name" id="gesture-name">—</span></div>
+
+  <div id="loading">
+    <div class="ring"></div>
+    <div>MENGAKTIFKAN KAMERA…</div>
+  </div>
+  <div id="err"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script>
+(function(){
+  const videoEl = document.getElementById('video');
+  const camCanvas = document.getElementById('cam-canvas');
+  const camCtx = camCanvas.getContext('2d');
+  const particleCanvas = document.getElementById('particles');
+  const pctx = particleCanvas.getContext('2d');
+  const loading = document.getElementById('loading');
+  const errBox = document.getElementById('err');
+  const trackState = document.getElementById('track-state');
+  const handState = document.getElementById('hand-state');
+  const gestureName = document.getElementById('gesture-name');
+  const legendRows = document.querySelectorAll('.leg-row');
+
+  function resize(){
+    particleCanvas.width = window.innerWidth;
+    particleCanvas.height = window.innerHeight;
+    camCanvas.width = videoEl.clientWidth || 220;
+    camCanvas.height = videoEl.clientHeight || 165;
+  }
+  window.addEventListener('resize', resize);
+
+  // ---------- Shape point generators ----------
+  function heartPoints(n, cx, cy, scale){
+    const pts = [];
+    for(let i=0;i<n;i++){
+      const t = Math.random()*Math.PI*2;
+      const r = Math.sqrt(Math.random());
+      let x = 16*Math.pow(Math.sin(t),3);
+      let y = -(13*Math.cos(t) - 5*Math.cos(2*t) - 2*Math.cos(3*t) - Math.cos(4*t));
+      x *= r; y *= r;
+      pts.push([cx + x*scale, cy + y*scale]);
+    }
+    return pts;
+  }
+  function starPoints(n, cx, cy, scale){
+    const pts = [];
+    const spikes = 5, outer = 1, inner = 0.42;
+    for(let i=0;i<n;i++){
+      const k = Math.floor(Math.random()*spikes*2);
+      const a0 = (k/(spikes*2))*Math.PI*2 - Math.PI/2;
+      const a1 = ((k+1)/(spikes*2))*Math.PI*2 - Math.PI/2;
+      const r0 = k%2===0? outer:inner;
+      const r1 = (k+1)%2===0? outer:inner;
+      const f = Math.random();
+      const a = a0 + (a1-a0)*f;
+      const r = (r0 + (r1-r0)*f) * (0.85+Math.random()*0.15);
+      pts.push([cx + Math.cos(a)*r*scale*22, cy + Math.sin(a)*r*scale*22]);
+    }
+    return pts;
+  }
+  function circlePoints(n, cx, cy, scale){
+    const pts = [];
+    for(let i=0;i<n;i++){
+      const a = Math.random()*Math.PI*2;
+      const r = (0.55+Math.random()*0.45)*scale*18;
+      pts.push([cx + Math.cos(a)*r, cy + Math.sin(a)*r]);
+    }
+    return pts;
+  }
+  function textPoints(n, cx, cy, text, fontSize){
+    const off = document.createElement('canvas');
+    off.width = 900; off.height = 260;
+    const octx = off.getContext('2d');
+    octx.fillStyle = '#fff';
+    octx.font = `700 ${fontSize}px 'Space Grotesk', sans-serif`;
+    octx.textAlign = 'center';
+    octx.textBaseline = 'middle';
+    octx.fillText(text, off.width/2, off.height/2);
+    const data = octx.getImageData(0,0,off.width,off.height).data;
+    const coords = [];
+    for(let y=0;y<off.height;y+=3){
+      for(let x=0;x<off.width;x+=3){
+        const idx = (y*off.width+x)*4+3;
+        if(data[idx] > 128) coords.push([x - off.width/2, y - off.height/2]);
+      }
+    }
+    const pts = [];
+    for(let i=0;i<n;i++){
+      const c = coords.length? coords[Math.floor(Math.random()*coords.length)] : [0,0];
+      pts.push([cx + c[0]*0.62, cy + c[1]*0.62]);
+    }
+    return pts;
+  }
+  function idlePoints(n, cx, cy){
+    const pts = [];
+    for(let i=0;i<n;i++){
+      const a = Math.random()*Math.PI*2;
+      const r = Math.random()*Math.min(window.innerWidth, window.innerHeight)*0.42;
+      pts.push([cx + Math.cos(a)*r, cy + Math.sin(a)*r]);
+    }
+    return pts;
+  }
+
+  // ---------- Particle system ----------
+  const N = 1100;
+  let particles = [];
+  const COLORS = {
+    idle:   ['#3a4a6a','#2a3550'],
+    open:   ['#5ff2ff','#8dfff2'],
+    peace:  ['#ff4fd8','#ff8ce8'],
+    fist:   ['#ffb35f','#ffd28c'],
+    thumb:  ['#8dff9e','#c8ffb8']
+  };
+
+  function initParticles(){
+    const cx = window.innerWidth/2, cy = window.innerHeight/2;
+    const targets = idlePoints(N, cx, cy);
+    particles = targets.map(p => ({
+      x: cx + (Math.random()-0.5)*80,
+      y: cy + (Math.random()-0.5)*80,
+      tx: p[0], ty: p[1],
+      size: 1 + Math.random()*1.8,
+      speed: 0.05 + Math.random()*0.05,
+      c1: COLORS.idle[0], c2: COLORS.idle[1],
+      phase: Math.random()*Math.PI*2
+    }));
+  }
+
+  let currentGesture = 'idle';
+  function setTargets(gesture){
+    if(gesture === currentGesture) return;
+    currentGesture = gesture;
+    const cx = window.innerWidth/2, cy = window.innerHeight*0.42;
+    let targets;
+    const scale = Math.min(window.innerWidth, window.innerHeight)/620;
+    if(gesture === 'open') targets = heartPoints(N, cx, cy, 12*scale);
+    else if(gesture === 'peace') targets = starPoints(N, cx, cy, scale);
+    else if(gesture === 'fist') targets = circlePoints(N, cx, cy, scale);
+    else if(gesture === 'thumb') targets = textPoints(N, cx, cy, 'MANTAP!', 96*scale);
+    else targets = idlePoints(N, cx, cy);
+
+    const [c1,c2] = COLORS[gesture] || COLORS.idle;
+    particles.forEach((p,i)=>{
+      const t = targets[i % targets.length];
+      p.tx = t[0]; p.ty = t[1];
+      p.c1 = c1; p.c2 = c2;
+    });
+
+    gestureName.textContent = ({
+      open:'TELAPAK TERBUKA — HATI', peace:'TANDA DAMAI — BINTANG',
+      fist:'KEPALAN — LINGKARAN', thumb:'JEMPOL — TEKS', idle:'MENUNGGU GESTUR…'
+    })[gesture];
+
+    legendRows.forEach(r => r.classList.toggle('active', r.dataset.g === gesture));
+  }
+
+  function animateParticles(){
+    pctx.clearRect(0,0,particleCanvas.width, particleCanvas.height);
+    pctx.globalCompositeOperation = 'lighter';
+    const t = performance.now()*0.001;
+    for(const p of particles){
+      p.x += (p.tx - p.x) * p.speed;
+      p.y += (p.ty - p.y) * p.speed;
+      const jitter = Math.sin(t*2 + p.phase) * 0.6;
+      const grad = pctx.createRadialGradient(p.x, p.y+jitter, 0, p.x, p.y+jitter, p.size*4);
+      grad.addColorStop(0, p.c1);
+      grad.addColorStop(1, 'transparent');
+      pctx.fillStyle = grad;
+      pctx.beginPath();
+      pctx.arc(p.x, p.y+jitter, p.size*2.2, 0, Math.PI*2);
+      pctx.fill();
+    }
+    pctx.globalCompositeOperation = 'source-over';
+    requestAnimationFrame(animateParticles);
+  }
+
+  // ---------- Gesture detection from landmarks ----------
+  function detectGesture(lm){
+    // lm: 21 landmarks, normalized [0,1], y grows downward
+    const tips = [4,8,12,16,20];
+    const pips = [3,6,10,14,18];
+    const wrist = lm[0];
+
+    function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+
+    // finger "up" = tip significantly farther from wrist than pip, along hand's own scale
+    const palmSize = dist(lm[0], lm[9]) || 0.001;
+    const fingerUp = [];
+    for(let i=1;i<5;i++){
+      const tip = lm[tips[i]], pip = lm[pips[i]];
+      fingerUp.push( (dist(tip,wrist) - dist(pip,wrist)) / palmSize > 0.05 );
+    }
+    // thumb: compare x-distance from palm depending on handedness roughly via cross product
+    const thumbTip = lm[4], thumbMcp = lm[2];
+    const thumbUp = dist(thumbTip, lm[17]) / palmSize > 1.1;
+
+    const upCount = fingerUp.filter(Boolean).length;
+
+    if(upCount === 4 && thumbUp) return 'open';
+    if(upCount >= 4) return 'open';
+    if(fingerUp[0] && fingerUp[1] && !fingerUp[2] && !fingerUp[3]) return 'peace';
+    if(upCount === 0 && !thumbUp) return 'fist';
+    if(upCount === 0 && thumbUp) return 'thumb';
+    return null; // ambiguous, keep previous
+  }
+
+  // ---------- MediaPipe setup ----------
+  let lastSeen = 0;
+  const hands = new Hands({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+  });
+  hands.setOptions({
+    maxNumHands: 1,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.65,
+    minTrackingConfidence: 0.6
+  });
+
+  hands.onResults((results) => {
+    camCtx.save();
+    camCtx.clearRect(0,0,camCanvas.width, camCanvas.height);
+
+    if(results.multiHandLandmarks && results.multiHandLandmarks.length){
+      lastSeen = performance.now();
+      trackState.textContent = 'AKTIF';
+      handState.textContent = 'TERDETEKSI';
+      const lm = results.multiHandLandmarks[0];
+
+      // draw skeleton on cam canvas
+      camCtx.strokeStyle = 'rgba(95,242,255,0.85)';
+      camCtx.fillStyle = 'rgba(255,79,216,0.9)';
+      camCtx.lineWidth = 2;
+      const CONNECTIONS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],
+        [0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],
+        [0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]];
+      CONNECTIONS.forEach(([a,b])=>{
+        camCtx.beginPath();
+        camCtx.moveTo(lm[a].x*camCanvas.width, lm[a].y*camCanvas.height);
+        camCtx.lineTo(lm[b].x*camCanvas.width, lm[b].y*camCanvas.height);
+        camCtx.stroke();
+      });
+      lm.forEach(p=>{
+        camCtx.beginPath();
+        camCtx.arc(p.x*camCanvas.width, p.y*camCanvas.height, 2.4, 0, Math.PI*2);
+        camCtx.fill();
+      });
+
+      const g = detectGesture(lm);
+      if(g) setTargets(g);
+    } else {
+      handState.textContent = '—';
+      if(performance.now() - lastSeen > 900){
+        setTargets('idle');
+      }
+    }
+    camCtx.restore();
+  });
+
+  async function start(){
+    try{
+      const camera = new Camera(videoEl, {
+        onFrame: async () => { await hands.send({image: videoEl}); },
+        width: 480, height: 360
+      });
+      await camera.start();
+      resize();
+      loading.classList.add('hidden');
+      trackState.textContent = 'MENCARI…';
+    }catch(e){
+      loading.classList.add('hidden');
+      errBox.style.display = 'block';
+      errBox.textContent = 'TIDAK BISA AKSES KAMERA. Izinkan akses kamera di browser, lalu muat ulang halaman. (' + (e && e.message ? e.message : 'unknown error') + ')';
+    }
+  }
+
+  resize();
+  initParticles();
+  animateParticles();
+  start();
+})();
+</script>
+</body>
+</html>
